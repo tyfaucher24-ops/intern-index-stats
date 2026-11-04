@@ -31,6 +31,7 @@
   let clockTimer = null;
   let lastLiveOk = 0;
   let livePolls = 0;
+  let signedOutNotice = '';
 
   const DEFAULT_DAYS = 90;
 
@@ -40,8 +41,17 @@
     const c = String(e.code || ''), m = String(e.message || '').toLowerCase();
     return c === 'PGRST202' || c === '42883' || /could not find the function|function .* does not exist|schema cache/.test(m);
   };
-  const isPrivate = e => {
+  /* Postgres refusing EXECUTE ("permission denied for function ...") is a deployment gap,
+     not an admin check: the RPC was never granted to the signed-in role yet. */
+  const isNotGranted = e => {
     if (!e) return false;
+    const c = String(e.code || ''), m = String(e.message || '').toLowerCase();
+    return c === '42501' && /permission denied for function|permission denied for schema/.test(m);
+  };
+
+  const isSessionGone = e => !!e && (String(e.code) === 'session_expired' || String(e.code) === 'signed_out');
+  const isPrivate = e => {
+    if (!e || isSessionGone(e)) return false;
     const c = String(e.code || ''), m = String(e.message || '').toLowerCase();
     return e.status === 401 || e.status === 403 || c === '42501' || /^not found$/.test(m);
   };
@@ -112,8 +122,8 @@
     shell(`
 <div class="notice" data-tone="warn">
   <h2>Not set up yet</h2>
-  <p>${esc(what)} isn’t deployed yet on this Supabase project, so there is nothing to show.</p>
-  <p class="muted">Once the database migration that creates it is applied, reload this page.</p>
+  <p>${esc(what)} isn’t answering yet on this Supabase project, so there is nothing to show.</p>
+  <p class="muted">It needs to be created and granted to signed-in admins by the database migration. Once that is applied, reload this page.</p>
   <p><button type="button" class="btn-ghost" id="retryBtn">Try again</button></p>
 </div>`, { wide: false });
     $('retryBtn').addEventListener('click', boot);
@@ -126,7 +136,7 @@
   <div class="notice" data-tone="warn" style="margin-top:18px">
     <h2>History isn’t set up yet</h2>
     <p>The stats function (<code>admin_stats_v17</code>) isn’t deployed on this Supabase project yet, so totals, charts and retention have nothing to read.</p>
-    <p class="muted">The live count below/above comes from <code>admin_live</code>, which is a separate function.</p>
+    <p class="muted">The live count above comes from <code>admin_live</code>, which is a separate function.</p>
     <p><button type="button" class="btn-ghost" id="retryBtn">Try again</button></p>
   </div>
 </div>`;
@@ -171,7 +181,10 @@
     const now = num(l.now);
     const nEl = $('liveNum'); if (!nEl) return;
     nEl.textContent = now == null ? '–' : now.toLocaleString('en-US');
-    $('liveCap').textContent = now == null ? 'waiting for first heartbeat' : 'on the site right now';
+    $('liveCap').textContent = now != null ? 'on the site right now'
+      : liveErr && liveErr.kind === 'denied' ? 'live count not available yet'
+      : liveErr && liveErr.kind === 'missing' ? 'live count not deployed yet'
+      : 'waiting for first heartbeat';
 
     const dot = $('liveDot');
     dot.dataset.idle = now == null ? '1' : '0';
@@ -197,8 +210,10 @@
     const beat = l.updated_at ? timeOf(l.updated_at) : null;
     $('liveBeat').textContent = beat ? 'Heartbeat ' + beat : 'No heartbeat received yet';
     const st = $('liveStatus');
-    st.innerHTML = liveErr ? '<span class="stale">Live count paused — last refresh failed</span>'
-      : 'Refreshes every 15 seconds while this tab is visible';
+    st.innerHTML = !liveErr ? 'Refreshes every 15 seconds while this tab is visible'
+      : liveErr.kind === 'denied' ? '<span class="stale">Live count is not authorized yet</span>'
+      : liveErr.kind === 'missing' ? '<span class="stale">Live count function is not deployed yet</span>'
+      : '<span class="stale">Live count paused — last refresh failed</span>';
   }
 
   /* ---------------- KPI cards ---------------- */
@@ -452,7 +467,8 @@
       renderPartialLive();
       return true;
     } catch (e) {
-      if (isPrivate(e)) { notAuthorized = true; stopLive(); renderPrivate(); return false; }
+      if (isSessionGone(e)) { stopLive(); signedOutNotice = 'Your session ended. Sign in again to see the numbers.'; boot(); return false; }
+      if (isPrivate(e)) { stopLive(); renderNotSetUp('The stats function (admin_stats_v17)'); return false; }
       if (isMissingFn(e)) { stopLive(); renderNotSetUp('The stats function (admin_stats_v17)'); return false; }
       if (String(e.code) === 'network') { stopLive(); renderOffline(); return false; }
       stopLive(); renderNotSetUp('The stats function (admin_stats_v17)'); return false;
@@ -476,6 +492,8 @@
       return true;
     } catch (e) {
       loading = false;
+      if (isSessionGone(e)) { stopLive(); signedOutNotice = 'Your session ended. Sign in again to see the numbers.'; boot(); return false; }
+      if (isNotGranted(e)) { await probeLive(); return false; }
       if (isPrivate(e)) { notAuthorized = true; stopLive(); renderPrivate(); return false; }
       if (isMissingFn(e)) { await probeLive(); return false; }
       if (String(e.code) === 'network') { stopLive(); renderOffline(); return false; }
@@ -497,9 +515,18 @@
       lastLiveOk = Date.now();
       stampUpdated();
     } catch (e) {
-      if (isPrivate(e)) { notAuthorized = true; stopLive(); renderPrivate(); return; }
-      if (isMissingFn(e)) { stopLive(); liveErr = e; if (!data) renderNotSetUp('The live function (admin_live)'); return; }
-      liveErr = e;
+      if (isSessionGone(e)) { stopLive(); signedOutNotice = 'Your session ended. Sign in again to see the numbers.'; boot(); return; }
+      if (isMissingFn(e)) { stopLive(); liveErr = { kind: 'missing' }; if (!data) renderNotSetUp('The live function (admin_live)'); return; }
+      if (isNotGranted(e) || isPrivate(e)) {
+        /* The history RPC already gated this page, so this is an answer about admin_live
+           itself (usually a grant that is not in place yet), not about the session.
+           Keep the numbers on screen and say so in the live card. */
+        stopLive();
+        liveErr = { kind: 'denied' };
+        if ($('liveNum')) fillLive();
+        return;
+      }
+      liveErr = { kind: 'other' };
     }
     if (main.querySelector('.hero')) patchLive();
   }
@@ -527,6 +554,8 @@
     const seq = ++bootSeq;
     stopLive();
     notAuthorized = false;
+    const notice = signedOutNotice;
+    signedOutNotice = '';
     data = null; live = null; liveErr = null;
 
     if (!Cloud || !Cloud.enabled) {
@@ -539,7 +568,7 @@
     if (!Cloud.signedIn()) {
       $('signOut').hidden = true; $('whoWrap').hidden = true;
       const u = document.getElementById('updated'); if (u) u.textContent = '';
-      renderSignIn();
+      renderSignIn(notice, notice ? 'err' : '');
       return;
     }
 

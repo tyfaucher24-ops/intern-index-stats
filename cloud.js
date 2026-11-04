@@ -29,17 +29,29 @@ window.StatsCloud = (() => {
     } catch (x) {
       const e = new Error('network'); e.code = 'network'; throw e;
     }
-    if (r.status === 401 && auth) {
-      save(null); emit('change');
-      const e = new Error('session expired'); e.code = 'session_expired'; e.status = 401; throw e;
-    }
     const txt = await r.text();
     let j = null;
     try { j = txt ? JSON.parse(txt) : null; } catch {}
     if (!r.ok) {
-      const e = new Error((j && (j.msg || j.message || j.error_description || j.error)) || ('HTTP ' + r.status));
+      const code = String((j && (j.code || j.error_code || (typeof j.error === 'string' ? j.error : ''))) || '');
+      const msg = (j && (j.msg || j.message || j.error_description)) || ('HTTP ' + r.status);
+
+      /* A 401 is only "your session ended" when the token itself was rejected.
+         42501 / "permission denied" is an authorization answer about the RPC, not the
+         session: it must surface as "not authorized" and must NOT sign the user out. */
+      const permDenied = code === '42501' || /permission denied/i.test(msg);
+      const tokenBad = r.status === 401 && !permDenied &&
+        (code === 'PGRST301' || code === 'PGRST302' ||
+          /jwt|token is expired|invalid claim|invalid signature|cryptographic/i.test(msg + ' ' + code));
+
+      if (tokenBad && auth) {
+        save(null); emit('change');
+        const e = new Error('session expired'); e.code = 'session_expired'; e.status = 401; throw e;
+      }
+
+      const e = new Error(msg);
       e.status = r.status;
-      e.code = (j && (j.code || j.error_code || (typeof j.error === 'string' ? j.error : ''))) || '';
+      e.code = code;
       e.detail = j;
       throw e;
     }
