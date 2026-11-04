@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Intern Index stats</title>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Private usage stats for Intern Index.">
+<!-- Everything is same-origin; the only network destination is the Supabase project. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://jsmhrhniqxohsalbejuw.supabase.co; font-src 'self'; base-uri 'none'; form-action 'none'">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234436c9'/%3E%3Crect x='9' y='8' width='4' height='16' rx='1.5' fill='%23fff'/%3E%3Crect x='17' y='12' width='4' height='12' rx='1.5' fill='%235fdaa2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#app">Skip to the numbers</a>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>Intern Index stats</h1>
+    </div>
+    <div class="topmeta">
+      <span id="updated" aria-live="off"></span>
+      <span id="whoWrap" hidden>Signed in as <b id="who">–</b></span>
+      <button type="button" class="btn-ghost btn-sm" id="signOut" hidden>Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main id="app">
+  <div class="wrap"><div class="panel" role="status"><h2>Loading…</h2><p class="sub">Checking your access.</p></div></div>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <p>Private dashboard. Counts are aggregated in the database; nothing is tracked on this page.</p>
+  </div>
+</footer>
+
+<noscript>
+  <div class="wrap"><div class="notice"><h2>JavaScript is off</h2><p>This dashboard needs JavaScript to read the numbers.</p></div></div>
+</noscript>
+
+<script src="cloud-config.js"></script>
+<script src="cloud.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
