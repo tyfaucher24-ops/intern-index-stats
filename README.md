@@ -15,6 +15,9 @@ Ty does not want on the public site live here instead.
   visible, pauses when the tab is hidden, and refreshes the moment it becomes visible again.
   If no heartbeat has ever arrived, it shows **–** with "waiting for first heartbeat" instead of a
   fake zero.
+- **Listings (latest sync)** (V21): open listings (same count as the Find page), new today, closed today
+  (New York day), and open listings by kind and by source. Read from the public `data/counts.json` that the
+  Intern Index sync writes every run (fetched from the product origin with `?ts=`; no Supabase table needed).
 - **Key numbers** — total users, new signups (7 days, with 30 days under it), DAU / WAU / MAU,
   stickiness (WAU ÷ MAU), saves this week, apply clicks this week, email subscribers.
 - **Daily signups and active users** — plain inline SVG line chart, with the same figures available

@@ -367,6 +367,36 @@
 
   /* ---------------- dashboard ---------------- */
 
+  /* ---------------- listing health (V21) ----------------
+     Public numbers, written by the Intern Index sync to data/counts.json each run:
+     open (same rule as the Find page), new_today (first seen today, New York day), closed_today, by_source (adapter/ATS,
+     plus lead-list / feed / user-added) and by_kind (employer-board vs lead-list vs feed vs user-added).
+     Fetched from the live product origin with ?ts= so it is never a cached copy. */
+  const INDEX_BASE = window.INDEX_BASE || (location.origin + '/internship-radar/');
+  let counts = null, countsErr = false;
+  async function loadCounts() {
+    try {
+      const r = await fetch(INDEX_BASE + 'data/counts.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error(r.status);
+      counts = await r.json(); countsErr = false;
+    } catch (e) { countsErr = true; }
+    fillCounts();
+  }
+  function fillCounts() {
+    const host = $('listingsHost'); if (!host) return;
+    if (!counts) { host.innerHTML = `<p class="muted">${countsErr ? 'Couldn’t read data/counts.json from the site.' : 'Loading listing counts…'}</p>`; return; }
+    const card = (label, value, sub) => `<div class="card"><p class="k">${label}</p><p class="v">${value}</p>${sub ? `<p class="s">${sub}</p>` : ''}</div>`;
+    const rows = o => Object.entries(o || {}).map(([k, v]) => `<li>${esc(k)} <b>${fmt(v)}</b></li>`).join('');
+    host.innerHTML = `<div class="cards">
+  ${card('Open listings', fmt(counts.open), 'same count as the Find page')}
+  ${card('New today', fmt(counts.new_today), 'first seen today (New York)')}
+  ${card('Closed today', fmt(counts.closed_today), 'moved to closed today')}
+</div>
+<p class="muted" style="margin-top:10px">Sync ${esc(timeOf(counts.updated) || counts.updated || '')} · day ${esc(counts.day || '')}</p>
+<h3>By kind</h3><ul class="pagelist" aria-label="Open listings by kind">${rows(counts.by_kind)}</ul>
+<h3>By source</h3><ul class="pagelist" aria-label="Open listings by source">${rows(counts.by_source)}</ul>`;
+  }
+
   function renderDashboard() {
     const d = data || {};
     document.title = 'Intern Index stats';
@@ -387,6 +417,11 @@
 
   <h2 class="sr">Key numbers</h2>
   ${cardsHTML(d)}
+
+  <section class="sec" aria-labelledby="hListings">
+    <div class="sec-h"><h2 id="hListings">Listings (latest sync)</h2></div>
+    <div id="listingsHost"><p class="muted">Loading listing counts…</p></div>
+  </section>
 
   <section class="sec" aria-labelledby="hDaily">
     <div class="sec-h"><h2 id="hDaily">Daily signups and active users</h2>${exp('daily', 'daily activity')}</div>
@@ -488,6 +523,7 @@
       loading = false;
       renderDashboard();
       fillLive();
+      fillCounts(); loadCounts();
       startLive();
       return true;
     } catch (e) {
